@@ -1151,7 +1151,7 @@ impl ExecSession {
             output_window,
             stdin_consumed: 0,
             stdin_credit_sent: 0,
-            stdin_credit_enabled: req.input_limit.is_some() || req.output_limit.is_some(),
+            stdin_credit_enabled: req.input_limit.is_some(),
         })
     }
 
@@ -1259,7 +1259,7 @@ impl ExecSession {
             output_window,
             stdin_consumed: 0,
             stdin_credit_sent: 0,
-            stdin_credit_enabled: req.input_limit.is_some() || req.output_limit.is_some(),
+            stdin_credit_enabled: req.input_limit.is_some(),
         })
     }
 }
@@ -2621,37 +2621,47 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stdin_credit_without_output_limit_tracks_pipe_delivery() {
-        let (tx, mut rx) = SessionOutputSender::channel();
-        let req: ExecRequest = serde_json::from_value(serde_json::json!({
-            "cmd": "/bin/cat", "input_limit": 16384
-        }))
-        .unwrap();
-        let mut session = ExecSession::spawn(19, &req, tx, None, SecurityProfile::Default, None)
-            .expect("spawn input-limited session");
-        assert_eq!(session.take_stdin_credit(), None);
-        session.enqueue_stdin(b"hello".to_vec(), None).unwrap();
-        assert_eq!(session.take_stdin_credit(), Some(5));
-        assert_eq!(session.take_stdin_credit(), None);
-        session.enqueue_stdin(Vec::new(), None).unwrap();
+    async fn stdin_credit_depends_only_on_input_limit() {
+        for tty in [false, true] {
+            for input_limit in [None, Some(16384)] {
+                for output_limit in [None, Some(65536)] {
+                    let (tx, mut rx) = SessionOutputSender::channel();
+                    let req: ExecRequest = serde_json::from_value(serde_json::json!({
+                        "cmd": "/bin/sh",
+                        "args": ["-c", "IFS= read -r value; printf '%s' \"$value\""],
+                        "tty": tty,
+                        "input_limit": input_limit,
+                        "output_limit": output_limit,
+                    }))
+                    .unwrap();
+                    let mut session =
+                        ExecSession::spawn(19, &req, tx, None, SecurityProfile::Default, None)
+                            .expect("spawn stdin credit session");
+                    assert_eq!(session.take_stdin_credit(), None);
+                    session.enqueue_stdin(b"hello\n".to_vec(), None).unwrap();
+                    assert_eq!(session.take_stdin_credit(), input_limit.map(|_| 6));
+                    assert_eq!(session.take_stdin_credit(), None);
 
-        let mut output = Vec::new();
-        let result = time::timeout(Duration::from_secs(5), async {
-            while let Some(envelope) = rx.recv().await {
-                match envelope.output {
-                    SessionOutput::Stdout(data) => output.extend_from_slice(&data),
-                    SessionOutput::Exited(code) => return code,
-                    _ => {}
+                    let mut output = Vec::new();
+                    let result = time::timeout(Duration::from_secs(5), async {
+                        while let Some(envelope) = rx.recv().await {
+                            match envelope.output {
+                                SessionOutput::Stdout(data) => output.extend_from_slice(&data),
+                                SessionOutput::Exited(code) => return code,
+                                _ => {}
+                            }
+                        }
+                        panic!("missing process exit");
+                    })
+                    .await;
+                    if result.is_err() {
+                        let _ = session.send_signal(libc::SIGKILL);
+                    }
+                    assert_eq!(result.unwrap(), 0);
+                    assert!(output.ends_with(b"hello"));
                 }
             }
-            panic!("missing process exit");
-        })
-        .await;
-        if result.is_err() {
-            let _ = session.send_signal(libc::SIGKILL);
         }
-        assert_eq!(result.unwrap(), 0);
-        assert_eq!(output, b"hello");
     }
 
     #[tokio::test]

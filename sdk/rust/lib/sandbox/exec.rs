@@ -971,13 +971,6 @@ pub(crate) mod agent {
         async fn stdin_writes_follow_negotiated_generation() {
             use microsandbox_protocol::exec::{ExecRequest, ExecStdin};
 
-            // Preserve the output limit wire field while negotiating stdin independently.
-            #[derive(serde::Deserialize)]
-            struct OriginalRequest {
-                #[serde(default)]
-                output_window: Option<u32>,
-            }
-
             for version in [9, 10] {
                 for output_limit in [None, Some(1024 * 1024)] {
                     let (client, mut peer) = flow_test_client_with_version(version).await;
@@ -999,9 +992,8 @@ pub(crate) mod agent {
                         let msg = microsandbox_protocol::codec::read_message(&mut peer)
                             .await
                             .unwrap();
-                        let original: OriginalRequest = msg.payload().unwrap();
-                        assert_eq!(original.output_window, output_limit);
                         let current: ExecRequest = msg.payload().unwrap();
+                        assert_eq!(current.output_limit, output_limit);
                         assert_eq!(current.input_limit, (version >= 10).then_some(16 * 1024));
                         let sends_credit = version >= 10 && current.input_limit.is_some();
                         let mut received = 0;

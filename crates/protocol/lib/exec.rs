@@ -63,12 +63,7 @@ pub struct ExecRequest {
     /// Maximum unread output buffered per command, in bytes, shared by stdout and stderr.
     /// Each chunk costs its payload length plus `EXEC_OUTPUT_EVENT_OVERHEAD`.
     /// Omission means unlimited output buffering. Requires generation 10.
-    /// The wire name remains `output_window` for existing generation-10 peers.
-    #[serde(
-        default,
-        rename = "output_window",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_limit: Option<u32>,
 
     /// Maximum outstanding stdin bytes selected by the host.
