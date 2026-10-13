@@ -233,7 +233,7 @@ For a long-lived process, construct a new backend to pick up configuration chang
 
 A full output buffer pauses output until it is read. This does not limit total collected output or total process memory. Set it before constructing a backend; existing streams keep their original limit.
 
-Guests without flow-control support retain legacy buffering with a warning. Earlier flow-control implementations enforce the input limit only when output is also limited. Existing sandboxes remain usable without restarting.
+Older released runtimes without flow-control support retain legacy buffering with a warning and remain usable without restarting. Unreleased generation-10 development builds may need updating.
 
 Large stdin writes are sent in 16 KiB chunks and wait when the input allowance is full. Neither setting limits the total data a command can transfer.
 

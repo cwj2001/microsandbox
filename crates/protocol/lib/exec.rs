@@ -72,8 +72,7 @@ pub struct ExecRequest {
     pub output_limit: Option<u32>,
 
     /// Maximum outstanding stdin bytes selected by the host.
-    /// Presence enables stdin credit independently of output buffering. Send only
-    /// when `Ready::exec_input_limit_version` is 1 and stdin credit is supported.
+    /// Presence enables stdin credit independently of output buffering. Requires generation 10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_limit: Option<u32>,
 }

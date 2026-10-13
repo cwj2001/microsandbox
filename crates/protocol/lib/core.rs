@@ -78,11 +78,6 @@ pub struct Ready {
     /// pause require the supported contract instead of assuming frame safety.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workload_transport_barrier_version: Option<u8>,
-
-    /// Supports `ExecRequest::input_limit` without an output limit when set to 1.
-    /// Earlier generation-10 agents return stdin credit only for output-limited requests.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exec_input_limit_version: Option<u8>,
 }
 
 /// Payload for `core.clock.sync` messages.
@@ -419,7 +414,6 @@ mod tests {
             relay_lease: None,
             local_transport: None,
             workload_transport_barrier_version: None,
-            exec_input_limit_version: None,
         };
         let mut legacy_bytes = Vec::new();
         ciborium::into_writer(&legacy, &mut legacy_bytes).unwrap();

@@ -685,7 +685,7 @@ pub(crate) mod agent {
             config, cmd, args, cwd, user, &env, &rlimits, tty, rows, cols,
         );
         req.output_limit = exec_config.output_limit.filter(|_| controlled);
-        let input_window = configure_input_credit(&client, &mut req, exec_config.input_limit)?;
+        let input_window = configure_input_credit(&client, &mut req, exec_config.input_limit);
         if input_window.is_none() {
             tracing::warn!(sandbox = %name, "guest does not support stdin credit for this request; exec.input_limit is not enforced");
         }
@@ -889,15 +889,10 @@ pub(crate) mod agent {
         client: &crate::agent::AgentClient,
         req: &mut microsandbox_protocol::exec::ExecRequest,
         limit: u32,
-    ) -> MicrosandboxResult<Option<Arc<super::input::InputWindow>>> {
-        let supports_credit = client.supports(MessageType::ExecStdinCredit);
-        let independent = supports_credit && client.ready()?.exec_input_limit_version == Some(1);
-        req.input_limit = independent.then_some(limit);
-
-        // Original generation-10 agents acknowledge stdin only when output_window
-        // is present. The host can enforce a smaller allowance using those credits.
-        let controlled = supports_credit && (independent || req.output_limit.is_some());
-        Ok(controlled.then(|| super::input::InputWindow::new(limit)))
+    ) -> Option<Arc<super::input::InputWindow>> {
+        let controlled = client.supports(MessageType::ExecStdinCredit);
+        req.input_limit = controlled.then_some(limit);
+        controlled.then(|| super::input::InputWindow::new(limit))
     }
 
     async fn enforce_deadline(
@@ -940,11 +935,11 @@ pub(crate) mod agent {
         use super::*;
 
         async fn flow_test_client() -> (Arc<crate::agent::AgentClient>, tokio::io::DuplexStream) {
-            flow_test_client_with_ready(microsandbox_protocol::core::Ready::default()).await
+            flow_test_client_with_version(microsandbox_protocol::message::PROTOCOL_VERSION).await
         }
 
-        async fn flow_test_client_with_ready(
-            ready: microsandbox_protocol::core::Ready,
+        async fn flow_test_client_with_version(
+            version: u8,
         ) -> (Arc<crate::agent::AgentClient>, tokio::io::DuplexStream) {
             use tokio::io::AsyncWriteExt;
 
@@ -956,7 +951,13 @@ pub(crate) mod agent {
             let handshake = async {
                 peer.write_all(&1u32.to_be_bytes()).await.unwrap();
                 peer.write_all(&1024u32.to_be_bytes()).await.unwrap();
-                let ready = Message::with_payload(MessageType::Ready, 0, &ready).unwrap();
+                let mut ready = Message::with_payload(
+                    MessageType::Ready,
+                    0,
+                    &microsandbox_protocol::core::Ready::default(),
+                )
+                .unwrap();
+                ready.v = version;
                 microsandbox_protocol::codec::write_message(&mut peer, &ready)
                     .await
                     .unwrap();
@@ -967,30 +968,24 @@ pub(crate) mod agent {
         }
 
         #[tokio::test]
-        async fn stdin_writes_survive_generation_ten_capability_differences() {
-            use microsandbox_protocol::{
-                core::Ready,
-                exec::{ExecRequest, ExecStdin},
-            };
+        async fn stdin_writes_follow_negotiated_generation() {
+            use microsandbox_protocol::exec::{ExecRequest, ExecStdin};
 
-            // These are the fields understood by the original generation-10 agent.
+            // Preserve the output limit wire field while negotiating stdin independently.
             #[derive(serde::Deserialize)]
             struct OriginalRequest {
                 #[serde(default)]
                 output_window: Option<u32>,
             }
 
-            for independent in [false, true] {
+            for version in [9, 10] {
                 for output_limit in [None, Some(1024 * 1024)] {
-                    let (client, mut peer) = flow_test_client_with_ready(Ready {
-                        exec_input_limit_version: independent.then_some(1),
-                        ..Ready::default()
-                    })
-                    .await;
+                    let (client, mut peer) = flow_test_client_with_version(version).await;
+                    let output_limit = output_limit.filter(|_| version >= 10);
                     let mut req: ExecRequest =
                         serde_json::from_value(serde_json::json!({"cmd": "/bin/cat"})).unwrap();
                     req.output_limit = output_limit;
-                    let window = configure_input_credit(&client, &mut req, 16 * 1024).unwrap();
+                    let window = configure_input_credit(&client, &mut req, 16 * 1024);
                     let sink = ExecSink::new(77, client.clone(), window.clone());
 
                     let send = async {
@@ -1007,9 +1002,8 @@ pub(crate) mod agent {
                         let original: OriginalRequest = msg.payload().unwrap();
                         assert_eq!(original.output_window, output_limit);
                         let current: ExecRequest = msg.payload().unwrap();
-                        assert_eq!(current.input_limit, independent.then_some(16 * 1024));
-                        let sends_credit = original.output_window.is_some()
-                            || (independent && current.input_limit.is_some());
+                        assert_eq!(current.input_limit, (version >= 10).then_some(16 * 1024));
+                        let sends_credit = version >= 10 && current.input_limit.is_some();
                         let mut received = 0;
                         while received < 128 * 1024 {
                             let msg = microsandbox_protocol::codec::read_message(&mut peer)
