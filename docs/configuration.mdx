@@ -229,13 +229,13 @@ For a long-lived process, construct a new backend to pick up configuration chang
 | Field | Default | Description |
 |---|---|---|
 | `output_limit` | `1048576` (1 MiB) | Maximum unread output buffered per command, in bytes, shared by stdout and stderr. Minimum: `65536` bytes (64 KiB); `null` disables the limit. |
-| `input_limit` | `65536` (64 KiB) | Maximum stdin bytes awaiting delivery to the command. Range: `16384`–`65536` bytes (16–64 KiB). |
+| `input_limit` | `65536` (64 KiB) | Maximum stdin payload bytes queued in the SDK per command. Any positive byte count; `null` disables the buffer limit. |
 
 A full output buffer pauses output until it is read. This does not limit total collected output or total process memory. Set it before constructing a backend; existing streams keep their original limit.
 
 Older released runtimes without flow-control support retain legacy buffering with a warning and remain usable without restarting. Unreleased generation-10 development builds may need updating.
 
-Large stdin writes are sent in 16 KiB chunks and wait when the input allowance is full. Neither setting limits the total data a command can transfer.
+Large stdin writes wait when the SDK buffer is full. Independently, the transport allows at most 64 KiB and four chunks awaiting guest acknowledgement, even with an unlimited buffer, so stdin cannot block output-credit messages. Chunks are at most 16 KiB and shrink to fit smaller buffers. The input limit excludes caller-owned data, transport buffers, and queue metadata; neither setting limits the total data a command can transfer.
 
 See [Slow output readers](/sandboxes/commands#slow-output-readers) for how limits affect guest writes and concurrent stdin/output.
 

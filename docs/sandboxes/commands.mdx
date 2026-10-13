@@ -14,7 +14,7 @@ Read output while the command runs; waiting for a completion marker first can le
 
 Collecting all output drains the stream but uses memory proportional to the total output. To let a command finish without an active reader, redirect its output to a file. This behavior applies to SDK, CLI, and SSH execution; see [`exec.output_limit`](/configuration#exec) for configuration and compatibility.
 
-Stdin defaults to a 64 KiB allowance, configurable through `exec.input_limit` from 16–64 KiB. Large writes are sent in 16 KiB chunks and wait for capacity; they are not truncated. Send large stdin input and read output concurrently to avoid blocking the command in both directions.
+Stdin defaults to a 64 KiB SDK buffer, configurable through `exec.input_limit` as any positive byte count or `null` for unlimited buffering. Transport flow control stays bounded independently. Writes wait until all bytes have been sent; cancelling a write may leave a queued prefix that is still delivered. Send large stdin input and read output concurrently to avoid blocking the command in both directions.
 
 ## Run the image default workload
 

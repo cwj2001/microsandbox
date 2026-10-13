@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use microsandbox_protocol::exec::{EXEC_OUTPUT_EVENT_OVERHEAD, MIN_EXEC_OUTPUT_WINDOW};
+use microsandbox_protocol::exec::{EXEC_OUTPUT_EVENT_OVERHEAD, MIN_EXEC_OUTPUT_LIMIT};
 use tokio::sync::Semaphore;
 
 use crate::{AgentdError, AgentdResult};
@@ -35,9 +35,9 @@ impl OutputWindow {
     pub(crate) fn new(bytes: Option<u32>) -> AgentdResult<Option<Arc<Self>>> {
         bytes
             .map(|bytes| {
-                if bytes < MIN_EXEC_OUTPUT_WINDOW {
+                if bytes < MIN_EXEC_OUTPUT_LIMIT {
                     return Err(AgentdError::ExecSession(format!(
-                        "exec output window must be at least {MIN_EXEC_OUTPUT_WINDOW} bytes"
+                        "exec output window must be at least {MIN_EXEC_OUTPUT_LIMIT} bytes"
                     )));
                 }
                 Ok(Arc::new(Self {
@@ -102,12 +102,12 @@ mod tests {
 
     #[tokio::test]
     async fn credit_is_bounded_and_cannot_be_replayed_or_forged() {
-        let window = OutputWindow::new(Some(MIN_EXEC_OUTPUT_WINDOW))
+        let window = OutputWindow::new(Some(MIN_EXEC_OUTPUT_LIMIT))
             .unwrap()
             .unwrap();
         assert!(
             window
-                .acquire(MIN_EXEC_OUTPUT_WINDOW as usize - EXEC_OUTPUT_EVENT_OVERHEAD as usize)
+                .acquire(MIN_EXEC_OUTPUT_LIMIT as usize - EXEC_OUTPUT_EVENT_OVERHEAD as usize)
                 .await
         );
         let pending = window.acquire(1);
@@ -119,7 +119,7 @@ mod tests {
         );
         assert!(
             window
-                .acknowledge(u64::from(MIN_EXEC_OUTPUT_WINDOW) + 1)
+                .acknowledge(u64::from(MIN_EXEC_OUTPUT_LIMIT) + 1)
                 .is_err()
         );
         assert_eq!(window.available.available_permits(), 0);

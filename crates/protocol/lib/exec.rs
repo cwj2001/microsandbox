@@ -12,11 +12,14 @@ use serde::{Deserialize, Serialize};
 pub const EXEC_OUTPUT_EVENT_OVERHEAD: u32 = 256;
 
 /// Minimum output window; permits at least one full guest read plus its metadata.
-pub const MIN_EXEC_OUTPUT_WINDOW: u32 = 64 * 1024;
+pub const MIN_EXEC_OUTPUT_LIMIT: u32 = 64 * 1024;
 
-/// Default and maximum in-flight stdin bytes for credit-controlled execution.
-/// Keeping input bounded leaves the connection available for output credits.
-pub const EXEC_STDIN_WINDOW: u32 = 64 * 1024;
+/// Payload bytes per stdin chunk sent by the SDK.
+pub const EXEC_STDIN_CHUNK_SIZE: usize = 16 * 1024;
+
+/// Internal in-flight stdin allowance, independent of the SDK buffer limit.
+/// Keeping transport input bounded leaves the connection available for output credits.
+pub const EXEC_STDIN_TRANSPORT_WINDOW: u32 = 64 * 1024;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -66,7 +69,8 @@ pub struct ExecRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_limit: Option<u32>,
 
-    /// Maximum outstanding stdin bytes selected by the host.
+    /// Internal maximum outstanding stdin bytes selected by the host transport.
+    /// Separate from the SDK configuration buffer limit, including when that is unlimited.
     /// Presence enables stdin credit independently of output buffering. Requires generation 10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_limit: Option<u32>,

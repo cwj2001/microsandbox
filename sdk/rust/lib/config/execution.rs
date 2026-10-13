@@ -1,10 +1,17 @@
 //! Global execution buffering configuration.
 
-use microsandbox_protocol::exec::{EXEC_STDIN_WINDOW, MIN_EXEC_OUTPUT_WINDOW};
+use microsandbox_protocol::exec::MIN_EXEC_OUTPUT_LIMIT;
 use microsandbox_types::ConfigPatch;
 use serde::{Deserialize, Serialize};
 
 use crate::{MicrosandboxError, MicrosandboxResult};
+
+//--------------------------------------------------------------------------------------------------
+// Constants
+//--------------------------------------------------------------------------------------------------
+
+const DEFAULT_EXEC_OUTPUT_LIMIT: u32 = 1024 * 1024;
+const DEFAULT_EXEC_INPUT_LIMIT: u32 = 64 * 1024;
 
 //--------------------------------------------------------------------------------------------------
 // Types
@@ -21,10 +28,10 @@ pub struct ExecConfig {
     /// stderr share it; output retained by callers and transport buffers is excluded.
     pub output_limit: Option<u32>,
 
-    /// Maximum stdin bytes awaiting delivery to the command, per execution.
-    /// Defaults to 64 KiB; the supported range is 16–64 KiB. Large writes wait
-    /// for capacity instead of being truncated.
-    pub input_limit: u32,
+    /// Maximum stdin payload bytes queued in the SDK per execution.
+    /// Defaults to 64 KiB; `None` disables this buffer limit. A finite limit must
+    /// be positive. Transport flow control remains bounded independently.
+    pub input_limit: Option<u32>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -35,15 +42,15 @@ impl ExecConfig {
     pub(crate) fn validate(&self) -> MicrosandboxResult<()> {
         if self
             .output_limit
-            .is_some_and(|bytes| bytes < MIN_EXEC_OUTPUT_WINDOW)
+            .is_some_and(|bytes| bytes < MIN_EXEC_OUTPUT_LIMIT)
         {
             return Err(MicrosandboxError::InvalidConfig(format!(
-                "exec.output_limit must be at least {MIN_EXEC_OUTPUT_WINDOW} bytes"
+                "exec.output_limit must be at least {MIN_EXEC_OUTPUT_LIMIT} bytes"
             )));
         }
-        if !(16 * 1024..=EXEC_STDIN_WINDOW).contains(&self.input_limit) {
+        if self.input_limit == Some(0) {
             return Err(MicrosandboxError::InvalidConfig(
-                "exec.input_limit must be between 16384 and 65536 bytes".into(),
+                "exec.input_limit must be positive or null".into(),
             ));
         }
         Ok(())
@@ -57,8 +64,8 @@ impl ExecConfig {
 impl Default for ExecConfig {
     fn default() -> Self {
         Self {
-            output_limit: Some(1024 * 1024),
-            input_limit: EXEC_STDIN_WINDOW,
+            output_limit: Some(DEFAULT_EXEC_OUTPUT_LIMIT),
+            input_limit: Some(DEFAULT_EXEC_INPUT_LIMIT),
         }
     }
 }

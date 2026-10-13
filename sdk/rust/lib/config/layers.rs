@@ -352,6 +352,30 @@ mod tests {
             ("input_limit", json!({}), json!({}), json!(65536)),
             (
                 "input_limit",
+                json!({"input_limit": null}),
+                json!({}),
+                Value::Null,
+            ),
+            (
+                "input_limit",
+                json!({"input_limit": 1}),
+                json!({}),
+                json!(1),
+            ),
+            (
+                "input_limit",
+                json!({"input_limit": 1048576}),
+                json!({}),
+                json!(1048576),
+            ),
+            (
+                "input_limit",
+                json!({"input_limit": 1048576}),
+                json!({"input_limit": null}),
+                Value::Null,
+            ),
+            (
+                "input_limit",
                 json!({"input_limit": 16384}),
                 json!({}),
                 json!(16384),
@@ -376,10 +400,7 @@ mod tests {
             );
         }
 
-        for (field, limits) in [
-            ("output_limit", vec![0, 65535]),
-            ("input_limit", vec![0, 16383, 65537]),
-        ] {
+        for (field, limits) in [("output_limit", vec![0, 65535]), ("input_limit", vec![0])] {
             for limit in limits {
                 let user = serde_json::from_value(json!({"exec": {field: limit}})).unwrap();
                 assert!(
