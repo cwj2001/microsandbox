@@ -654,7 +654,9 @@ mod tests {
     #[test]
     fn provides_devtmpfs_mountpoint_before_agent_startup() {
         let fs = AgentBootstrapFs::new().unwrap();
+
         let entry = fs.lookup(context(), ROOT_INODE, c"dev").unwrap();
+
         assert_eq!(entry.attr.st_mode & 0o170000, S_IFDIR);
     }
 
