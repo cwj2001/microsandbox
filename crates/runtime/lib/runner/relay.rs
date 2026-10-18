@@ -88,6 +88,9 @@ mod input_stall;
 #[path = "relay/input_stall_tests.rs"]
 mod input_stall_tests;
 
+#[path = "relay/input.rs"]
+mod input_admission;
+
 #[cfg(test)]
 #[path = "relay/namespace_tests.rs"]
 mod namespace_tests;
@@ -2131,6 +2134,13 @@ impl AgentRelay {
                                 encoded
                             } else { ready_frame.clone() };
 
+                            let input_frames = microsandbox_protocol::relay_input::FRAMES;
+                            let input_admission_enabled = ready_message.v >= 6;
+                            let client_ready_frame = if input_admission_enabled {
+                                microsandbox_protocol::relay_input::advertise(&client_ready_frame, input_frames)
+                                    .map_err(|e| RuntimeError::Custom(e.to_string()))?
+                            } else { client_ready_frame };
+
                             let mut handshake = Vec::with_capacity(8 + ready_frame.len());
                             handshake.extend_from_slice(&id_start.to_be_bytes());
                             handshake.extend_from_slice(&id_end_exclusive.to_be_bytes());
@@ -2229,6 +2239,9 @@ impl AgentRelay {
                             let merge_command_tx_clone = merge_command_tx.clone();
                             let pending_disconnects_clone = Arc::clone(&pending_disconnects);
 
+                            let reader_half: Box<dyn AsyncRead + Unpin + Send> = if input_admission_enabled {
+                                Box::new(input_admission::wrap(reader_half, agent_tx.clone(), write_tx.clone(), write_budget.clone(), id_start, id_end_exclusive, input_frames))
+                            } else { Box::new(reader_half) };
                             tokio::spawn(client_reader_task(
                                 slot,
                                 reader_half,

@@ -451,6 +451,8 @@ pub mod exec_control;
 pub mod fs;
 pub mod heartbeat;
 pub mod message;
+/// Connection-wide SDK input admission.
+pub mod relay_input;
 pub mod tcp;
 #[doc(hidden)]
 pub mod transport;

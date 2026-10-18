@@ -208,6 +208,16 @@ sandbox echoed in its ready frame)`. Every typed send checks `min_protocol_versi
 - **Generation-8 raw bulk is an additive, gated body format.** `FLAG_BULK` is never combined with lifecycle flags; opening offers and acceptance messages establish the permitted operation kind, flow mask, record limit, and initial absolute credits before any raw record may appear.
 - **A real format break** (kind 3) now means changing the immutable header or changing an existing body's interpretation. That requires forking the codec per `AgentProtocol` generation and carrying the old one until a support horizon (see `TODO(upgrade-0.6)`).
 
+### Connection-wide relay input admission
+
+The runtime may add `relay_input: { format: 1, bytes, frames }` to its client-facing Ready payload. It applies to the existing agent byte stream, including cloud tunnels; it does not require a host control socket or a guest protocol-generation change. Old clients ignore it, and new clients retain the historical path when it is absent.
+
+A supporting client opts in with an ID-zero, flags-zero frame whose body is `MSBI`, format byte `1`, and kind byte `0`. Runtime acknowledgements use kind `1`, followed by cumulative wire-byte and frame counts as two big-endian `u64`s. Wire bytes include the four-byte length prefix and five-byte frame header. These records terminate at the runtime and never reach agentd.
+
+The allowance covers ordinary frames across the whole connection. The sender reserves bytes and a frame slot before entering its writer queue; output/bulk acknowledgements use separate control capacity. The runtime retains ordinary input in a bounded queue and continues reading progress messages while forwarding ordinary input is blocked. It acknowledges removal from that queue, not delivery to the command's stdin. Per-execution stdin acknowledgements retain their separate guest-pipe meaning. Duplicate transport acknowledgements release no extra capacity; backwards offsets, mismatched byte/frame counts, and unsent acknowledgements are rejected.
+
+The native shared-arena upgrade and release records remain exempt, with a bounded receiver reserve; arena references consume ordinary frame capacity. The transport allowance is independent of a configured execution limit, so unlimited execution input still waits when transport capacity is exhausted. Execution limits, their defaults and validation, chunking, and total input size are unchanged.
+
 ### Tests that keep this honest
 
 - **Schema snapshot test** (`crates/protocol/tests/schema_snapshot.rs`): generate the current

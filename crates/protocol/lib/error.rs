@@ -50,6 +50,10 @@ pub enum ProtocolError {
     #[error("invalid bulk transport binding: {0}")]
     InvalidBulkBinding(String),
 
+    /// An SDK-to-relay admission contract is malformed.
+    #[error("invalid relay input contract: {0}")]
+    InvalidRelayInput(String),
+
     /// Unexpected end of stream.
     #[error("unexpected end of stream")]
     UnexpectedEof,

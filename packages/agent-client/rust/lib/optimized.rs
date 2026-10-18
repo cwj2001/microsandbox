@@ -124,6 +124,7 @@ pub struct AgentClient {
     exec_controller: Option<crate::ExecController>,
     /// Channel to the transport writer task.
     writer: mpsc::Sender<WriterCommand>,
+    input_admission: Option<Arc<super::input_admission::Window>>,
     /// Next correlation ID to allocate (starts at `id_min`).
     next_id: AtomicU32,
     /// Lower bound (inclusive) of the assigned ID range.
@@ -164,6 +165,7 @@ struct AgentHandshake {
 
 #[cfg_attr(not(feature = "stream"), allow(dead_code))]
 struct WriterCommand {
+    input_reservation: Option<super::input_admission::Reservation>,
     frame: WriterFrame,
     ack: oneshot::Sender<AgentClientResult<()>>,
 }
@@ -174,6 +176,12 @@ enum WriterFrame {
     Bulk(BulkRecord),
     #[cfg(all(feature = "uds", unix))]
     LocalBulk(PreparedLocalBulk),
+}
+
+#[cfg(feature = "stream")]
+struct ReaderRouting {
+    pending: Arc<Mutex<HashMap<u32, CorrelationRoute>>>,
+    input_admission: Option<Arc<super::input_admission::Window>>,
 }
 
 /// One decoded transport item before the caller chooses its raw or typed API view.
@@ -692,9 +700,29 @@ impl AgentClient {
     }
 
     async fn write_writer_frame(&self, frame: WriterFrame) -> AgentClientResult<()> {
+        let charge = match &frame {
+            WriterFrame::Control(raw) => microsandbox_protocol::relay_input::wire_bytes(raw),
+            WriterFrame::Bulk(record) => {
+                4 + microsandbox_protocol::message::FRAME_HEADER_SIZE
+                    + microsandbox_protocol::bulk::BULK_HEADER_SIZE
+                    + record.payload.len()
+            }
+            #[cfg(all(feature = "uds", unix))]
+            WriterFrame::LocalBulk(prepared) => encode_local_bulk_ref(prepared.descriptor())
+                .map_err(|e| AgentClientError::LocalTransport(e.to_string()))?
+                .len(),
+        };
+        let input_reservation = match &self.input_admission {
+            Some(window) => Some(window.reserve(charge).await?),
+            None => None,
+        };
         let (ack, written) = oneshot::channel();
         self.writer
-            .send(WriterCommand { frame, ack })
+            .send(WriterCommand {
+                frame,
+                ack,
+                input_reservation,
+            })
             .await
             .map_err(|_| AgentClientError::Closed)?;
         written.await.map_err(|_| AgentClientError::Closed)?
@@ -769,6 +797,15 @@ impl AgentClient {
         body: Vec<u8>,
         admitted: impl FnOnce(),
     ) -> AgentClientResult<()> {
+        let raw = RawFrame { id, flags, body };
+        let input_reservation = match &self.input_admission {
+            Some(window) if !microsandbox_protocol::relay_input::is_progress(&raw) => Some(
+                window
+                    .reserve(microsandbox_protocol::relay_input::wire_bytes(&raw))
+                    .await?,
+            ),
+            _ => None,
+        };
         let (ack, written) = oneshot::channel();
         let slot = self
             .writer
@@ -777,7 +814,8 @@ impl AgentClient {
             .map_err(|_| AgentClientError::Closed)?;
         admitted();
         slot.send(WriterCommand {
-            frame: WriterFrame::Control(RawFrame { id, flags, body }),
+            frame: WriterFrame::Control(raw),
+            input_reservation,
             ack,
         });
         written.await.map_err(|_| AgentClientError::Closed)?
@@ -834,7 +872,7 @@ fn is_retryable_named_pipe_connect_error(error: &std::io::Error) -> bool {
 #[cfg(feature = "stream")]
 async fn finish_connection<R, W>(
     reader: R,
-    writer: W,
+    mut writer: W,
     handshake: AgentHandshake,
     #[cfg(all(feature = "uds", unix))] local: Option<LocalShmClient>,
 ) -> AgentClientResult<AgentClient>
@@ -863,6 +901,23 @@ where
         );
     }
 
+    let discovery = if handshake.protocol == AgentProtocol::Current {
+        codec::raw_frame_to_message(RawFrame {
+            id: 0,
+            flags: 0,
+            body: handshake.ready_body.clone(),
+        })?
+        .payload::<microsandbox_protocol::relay_input::Discovery>()?
+    } else {
+        Default::default()
+    };
+    let input_admission = discovery
+        .relay_input
+        .map(super::input_admission::Window::new)
+        .transpose()?;
+    if input_admission.is_some() {
+        codec::write_raw_frame(&mut writer, &microsandbox_protocol::relay_input::start()).await?;
+    }
     let pending: Arc<Mutex<HashMap<u32, CorrelationRoute>>> = Arc::new(Mutex::new(HashMap::new()));
     let (writer_tx, writer_rx) = mpsc::channel(WRITER_QUEUE_CAPACITY);
 
@@ -875,10 +930,14 @@ where
         Some(local) => (Some(local.inbound), Some(local.outbound)),
         None => (None, None),
     };
+    let routing = ReaderRouting {
+        pending: pending.clone(),
+        input_admission: input_admission.clone(),
+    };
     #[cfg(all(feature = "uds", unix))]
     let reader_handle = tokio::spawn(reader_loop(
         reader,
-        Arc::clone(&pending),
+        routing,
         local_inbound,
         local_outbound.clone(),
         local_release_tx,
@@ -886,7 +945,7 @@ where
         connection_shutdown_rx.clone(),
     ));
     #[cfg(not(all(feature = "uds", unix)))]
-    let reader_handle = tokio::spawn(reader_loop(reader, Arc::clone(&pending)));
+    let reader_handle = tokio::spawn(reader_loop(reader, routing));
     #[cfg(all(feature = "uds", unix))]
     let writer_handle = tokio::spawn(stream_writer_loop(
         writer,
@@ -902,6 +961,7 @@ where
     Ok(AgentClient {
         exec_controller: None,
         writer: writer_tx,
+        input_admission,
         next_id: AtomicU32::new(first_request_id(handshake.id_min)),
         id_min: handshake.id_min,
         id_max: handshake.id_max,
@@ -1183,6 +1243,9 @@ async fn write_writer_command<W>(
 where
     W: tokio::io::AsyncWrite + Unpin,
 {
+    if let Some(reservation) = command.input_reservation.take() {
+        reservation.commit();
+    }
     match &mut command.frame {
         WriterFrame::Control(frame) => codec::write_raw_frame(writer, frame).await?,
         WriterFrame::Bulk(record) => codec::write_bulk_record(writer, record).await?,
@@ -1203,7 +1266,7 @@ where
 #[cfg(all(feature = "stream", feature = "uds", unix))]
 async fn reader_loop<R>(
     mut reader: R,
-    pending: Arc<Mutex<HashMap<u32, CorrelationRoute>>>,
+    routing: ReaderRouting,
     local_inbound: Option<SharedArenaConsumer>,
     local_outbound: Option<SharedArenaProducer>,
     local_release_tx: mpsc::UnboundedSender<LocalBulkRelease>,
@@ -1212,6 +1275,10 @@ async fn reader_loop<R>(
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
+    let ReaderRouting {
+        pending,
+        input_admission,
+    } = routing;
     loop {
         let frame = match tokio::select! {
             changed = connection_shutdown_rx.changed() => {
@@ -1228,6 +1295,18 @@ async fn reader_loop<R>(
                 break;
             }
         };
+        if microsandbox_protocol::relay_input::is_extension(&frame) {
+            let Some(position) = microsandbox_protocol::relay_input::decode_ack(&frame) else {
+                break;
+            };
+            let Some(window) = &input_admission else {
+                break;
+            };
+            if window.acknowledge(position).is_err() {
+                break;
+            }
+            continue;
+        }
         if frame.id == 0 && frame.flags == 0 {
             let local = match decode_local_body(&frame.body) {
                 Ok(local) => local,
@@ -1279,16 +1358,23 @@ async fn reader_loop<R>(
     }
     let _ = connection_shutdown_tx.send(true);
 
+    if let Some(window) = &input_admission {
+        window.close();
+    }
     // Reader exited — drop all senders so outstanding receivers wake up.
     let mut map = pending.lock().await;
     map.clear();
 }
 
 #[cfg(all(feature = "stream", not(all(feature = "uds", unix))))]
-async fn reader_loop<R>(mut reader: R, pending: Arc<Mutex<HashMap<u32, CorrelationRoute>>>)
+async fn reader_loop<R>(mut reader: R, routing: ReaderRouting)
 where
     R: tokio::io::AsyncRead + Unpin,
 {
+    let ReaderRouting {
+        pending,
+        input_admission,
+    } = routing;
     loop {
         let frame = match codec::read_raw_frame(&mut reader).await {
             Ok(frame) => frame,
@@ -1297,9 +1383,24 @@ where
                 break;
             }
         };
+        if microsandbox_protocol::relay_input::is_extension(&frame) {
+            let Some(position) = microsandbox_protocol::relay_input::decode_ack(&frame) else {
+                break;
+            };
+            let Some(window) = &input_admission else {
+                break;
+            };
+            if window.acknowledge(position).is_err() {
+                break;
+            }
+            continue;
+        }
         dispatch_frame(InboundFrame::Raw(frame), &pending).await;
     }
 
+    if let Some(window) = &input_admission {
+        window.close();
+    }
     pending.lock().await.clear();
 }
 
@@ -1423,6 +1524,9 @@ fn encode_message_body<T: Serialize>(
 
 impl Drop for AgentClient {
     fn drop(&mut self) {
+        if let Some(window) = &self.input_admission {
+            window.close();
+        }
         self.reader_handle.abort();
         self.writer_handle.abort();
     }

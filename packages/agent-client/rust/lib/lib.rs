@@ -15,6 +15,7 @@
 pub mod client;
 pub mod error;
 pub mod exec_control;
+mod input_admission;
 /// Internal Unix-local shared-memory transport used by the UDS adapter and runtime relay.
 ///
 /// The SDK connects through [`OptimizedAgentClient`] for automatic arena negotiation.
