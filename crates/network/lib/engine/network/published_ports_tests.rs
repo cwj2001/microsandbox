@@ -1,6 +1,7 @@
 //! Published ports through the real network engine and virtio-net frame boundary.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use smoltcp::iface::{Config, Interface, SocketSet};
@@ -58,6 +59,134 @@ fn published_ports_work_without_host_routes() {
             }
         }
     });
+}
+
+#[test]
+fn published_port_bind_failure_requests_termination() {
+    // Isolate poll threads from the rest of the network tests.
+    const CHILD_ENV: &str = "MSB_TEST_PUBLISHED_PORT_BIND_FAILURE";
+    if std::env::var_os(CHILD_ENV).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engine::network::published_ports_tests::published_port_bind_failure_requests_termination",
+                "--nocapture",
+            ])
+            .env(CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "published-port failure child failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return;
+    }
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for protocol in [PortProtocol::Tcp, PortProtocol::Udp] {
+            let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let udp = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let address = match protocol {
+                PortProtocol::Tcp => tcp.local_addr().unwrap(),
+                PortProtocol::Udp => udp.local_addr().unwrap(),
+            };
+            let mut config = NetworkConfig::default();
+            config.tls.enabled = false;
+            config.policy = NetworkPolicy::allow_all();
+            config.ports.push(PublishedPort {
+                host_port: address.port(),
+                guest_port: 8000,
+                protocol,
+                host_bind: address.ip(),
+            });
+            let mut network = SmoltcpNetwork::build(
+                config.resolve(&EnvNetworkSecretResolver).unwrap(),
+                7,
+                microsandbox_types::DeploymentProfile::SingleTenant,
+                HostRoutes {
+                    ipv4: false,
+                    ipv6: false,
+                },
+            )
+            .unwrap();
+            let (terminated, mut receiver) = tokio::sync::mpsc::channel(1);
+            network.termination_handle().set_hook(Arc::new(move || {
+                let _ = terminated.try_send(());
+            }));
+            let _publication = network.start(tokio::runtime::Handle::current());
+            tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+                .await
+                .unwrap_or_else(|_| panic!("occupied {protocol:?} port did not terminate startup"))
+                .expect("termination hook was dropped");
+        }
+    });
+}
+
+#[tokio::test]
+async fn published_port_bind_failure_rolls_back_all_protocols() {
+    for blocked_protocol in [PortProtocol::Tcp, PortProtocol::Udp] {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let outgoing = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_peer, _) = listener.accept().unwrap();
+        let udp_blocker = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        // A connected but non-listening TCP socket must also refuse publication.
+        let blocked = match blocked_protocol {
+            PortProtocol::Tcp => outgoing.local_addr().unwrap(),
+            PortProtocol::Udp => udp_blocker.local_addr().unwrap(),
+        };
+        let free_tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let free_udp = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let mut config = NetworkConfig::default();
+        config.tls.enabled = false;
+        config.policy = NetworkPolicy::allow_all();
+        for (address, protocol) in [
+            (free_tcp, PortProtocol::Tcp),
+            (free_udp, PortProtocol::Udp),
+            (blocked, blocked_protocol),
+        ] {
+            config.ports.push(PublishedPort {
+                host_port: address.port(),
+                guest_port: 8000,
+                protocol,
+                host_bind: address.ip(),
+            });
+        }
+        let mut network = SmoltcpNetwork::build(
+            config.resolve(&EnvNetworkSecretResolver).unwrap(),
+            7,
+            microsandbox_types::DeploymentProfile::SingleTenant,
+            HostRoutes {
+                ipv4: false,
+                ipv6: false,
+            },
+        )
+        .unwrap();
+        let publication = tokio::time::timeout(
+            Duration::from_secs(2),
+            network.start(tokio::runtime::Handle::current()),
+        )
+        .await
+        .expect("publication did not finish")
+        .expect("network dropped publication result");
+        assert_eq!(
+            publication.unwrap_err().kind(),
+            std::io::ErrorKind::AddrInUse
+        );
+        let _tcp = std::net::TcpListener::bind(free_tcp).expect("TCP rollback leaked its binding");
+        let _udp = std::net::UdpSocket::bind(free_udp).expect("UDP rollback leaked its binding");
+    }
 }
 
 async fn check_published_port(protocol: PortProtocol, bind: IpAddr) {
@@ -141,7 +270,11 @@ async fn check_published_port(protocol: PortProtocol, bind: IpAddr) {
             sockets.add(socket)
         }
     };
-    network.start(tokio::runtime::Handle::current());
+    network
+        .start(tokio::runtime::Handle::current())
+        .await
+        .unwrap()
+        .unwrap();
     let client = tokio::spawn(async move {
         let client_ip = if bind.is_unspecified() {
             Ipv4Addr::LOCALHOST.into()

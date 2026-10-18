@@ -251,6 +251,7 @@ pub fn smoltcp_poll_loop(
     tokio_handle: tokio::runtime::Handle,
     secrets: SecretsHandle,
     outbound_proxy: Option<Arc<ResolvedOutboundProxy>>,
+    publication_result: Option<tokio::sync::oneshot::Sender<std::io::Result<()>>>,
 ) {
     let mut device = SmoltcpDevice::new(shared.clone(), config.mtu);
     let mut iface = create_interface(&mut device, &config);
@@ -289,20 +290,38 @@ pub fn smoltcp_poll_loop(
         config.gateway_mac,
         config.guest_mac,
     );
-    let mut port_publisher = PortPublisher::new(
-        &published_ports,
-        tcp_accept_queue_size,
-        max_inbound_tcp_connections,
-        config.guest_ipv4,
-        config.guest_ipv6,
-        config.gateway.ipv4,
-        config.gateway.ipv6,
-        config.gateway_mac,
-        config.guest_mac,
-        network_policy.clone(),
-        shared.clone(),
-        &tokio_handle,
-    );
+    let publisher = {
+        let _entered = tokio_handle.enter();
+        PortPublisher::new(
+            &published_ports,
+            tcp_accept_queue_size,
+            max_inbound_tcp_connections,
+            config.guest_ipv4,
+            config.guest_ipv6,
+            config.gateway.ipv4,
+            config.gateway.ipv6,
+            config.gateway_mac,
+            config.guest_mac,
+            network_policy.clone(),
+            shared.clone(),
+            &tokio_handle,
+        )
+    };
+    let mut port_publisher = match publisher {
+        Ok(publisher) => {
+            if let Some(result) = publication_result {
+                let _ = result.send(Ok(()));
+            }
+            publisher
+        }
+        Err(error) => {
+            if let Some(result) = publication_result {
+                let _ = result.send(Err(error));
+            }
+            shared.trigger_termination();
+            return;
+        }
+    };
     let mut udp_relay = UdpRelay::new(
         shared.clone(),
         config.gateway_mac,
@@ -2072,6 +2091,7 @@ mod tests {
                 handle,
                 SecretsHandle::new(Default::default()),
                 None,
+                None,
             );
         });
         let send = |guest_port, control, seq, ack, payload: &[u8]| {
@@ -2220,6 +2240,7 @@ mod tests {
                 None,
                 handle,
                 SecretsHandle::new(Default::default()),
+                None,
                 None,
             );
         });

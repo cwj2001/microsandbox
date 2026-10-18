@@ -386,7 +386,14 @@ impl SmoltcpNetwork {
     ///
     /// Must be called before VM boot. Requires a tokio runtime handle for
     /// spawning proxy tasks, DNS resolution, and published port listeners.
-    pub fn start(&mut self, tokio_handle: tokio::runtime::Handle) {
+    ///
+    /// Await the returned acknowledgment before reporting runtime readiness. A deferred
+    /// network must first be activated; every requested TCP/UDP bind must succeed.
+    pub fn start(
+        &mut self,
+        tokio_handle: tokio::runtime::Handle,
+    ) -> tokio::sync::oneshot::Receiver<std::io::Result<()>> {
+        let (publication_tx, publication_rx) = tokio::sync::oneshot::channel();
         let shared = self.shared.clone();
         let poll_config = PollLoopConfig {
             gateway_mac: self.gateway_mac,
@@ -434,10 +441,12 @@ impl SmoltcpNetwork {
                         tokio_handle,
                         secrets,
                         outbound_proxy,
+                        Some(publication_tx),
                     );
                 })
                 .expect("failed to spawn smoltcp poll thread"),
         );
+        publication_rx
     }
 
     /// Take the `NetBackend` for `VmBuilder::net()`. One-shot.

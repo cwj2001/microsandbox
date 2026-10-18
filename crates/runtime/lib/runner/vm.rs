@@ -444,17 +444,20 @@ type NetworkSecretsHandle = microsandbox_network::secrets::handle::SecretsHandle
 type NetworkSecretsHandle = ();
 
 #[cfg(feature = "net")]
-type NetworkActivationHandle = microsandbox_network::network::NetworkActivationHandle;
+struct NetworkStartup {
+    activation: Option<microsandbox_network::network::NetworkActivationHandle>,
+    publication: tokio::sync::oneshot::Receiver<std::io::Result<()>>,
+}
 
 #[cfg(not(feature = "net"))]
-type NetworkActivationHandle = ();
+type NetworkStartup = ();
 
 type VmBuildOutput = (
     msb_krun::Vm,
     Option<NetworkTerminationHandle>,
     Option<NetworkMetricsHandle>,
     Option<NetworkSecretsHandle>,
-    Option<NetworkActivationHandle>,
+    Option<NetworkStartup>,
     Option<Vec<u8>>,
     GuestBootstrap,
     BindIdentityMapRegistration,
@@ -1061,7 +1064,7 @@ fn run(
         _network_termination_handle,
         network_metrics_handle,
         _network_secrets_handle,
-        network_activation_handle,
+        network_startup,
         bootstrap_frame,
         resolved_bootstrap,
         bind_identity_map,
@@ -1211,7 +1214,7 @@ fn run(
         let network_exit_handle = exit_handle.clone();
         let network_reason = Arc::clone(&exit_reason);
         network_termination_handle.set_hook(Arc::new(move || {
-            tracing::warn!("secret violation requested sandbox termination");
+            tracing::warn!("network requested sandbox termination");
             network_reason.store(EXIT_REASON_SIGNAL, std::sync::atomic::Ordering::SeqCst);
             network_exit_handle.trigger();
         }));
@@ -1311,6 +1314,31 @@ fn run(
 
         match ready_result {
             Ok(Ok(mut relay)) => {
+                #[cfg(feature = "net")]
+                if let Some(startup) = network_startup {
+                    if let Some(activation) = startup.activation {
+                        // Keep restored traffic deferred until guest activation has completed.
+                        activation.activate();
+                    }
+                    let published = startup.publication.await.unwrap_or_else(|_| {
+                        Err(std::io::Error::other(
+                            "network publisher exited before readiness",
+                        ))
+                    });
+                    if let Err(error) = published {
+                        let error =
+                            RuntimeError::Custom(format!("publish network endpoints: {error}"));
+                        super::progress::publish_failure(&relay_boot_log_dir, &error);
+                        relay_exit_reason.store(
+                            EXIT_REASON_AGENT_UNRESPONSIVE,
+                            std::sync::atomic::Ordering::SeqCst,
+                        );
+                        relay_exit_handle.trigger();
+                        return;
+                    }
+                }
+                #[cfg(not(feature = "net"))]
+                let _ = network_startup;
                 if let Some(publication) = restore_endpoint_publication
                     && let Err(error) = publication.publish(&mut relay)
                 {
@@ -1323,14 +1351,6 @@ fn run(
                     relay_exit_handle.trigger();
                     return;
                 }
-                #[cfg(feature = "net")]
-                if let Some(network_activation) = network_activation_handle {
-                    // Published-port listeners and all packet processing start only after the
-                    // restored workload and local control surfaces are ready.
-                    network_activation.activate();
-                }
-                #[cfg(not(feature = "net"))]
-                let _ = network_activation_handle;
                 if let Some((
                     writer,
                     interval_ms,
@@ -2476,9 +2496,9 @@ fn build_vm(
     let mut network_metrics_handle = None;
     let mut network_secrets_handle = None;
     #[cfg(feature = "net")]
-    let mut network_activation_handle = None;
+    let mut network_startup = None;
     #[cfg(not(feature = "net"))]
-    let network_activation_handle: Option<NetworkActivationHandle> = None;
+    let network_startup: Option<NetworkStartup> = None;
 
     // Vsock routes are independent of virtio-net. Microsandbox owns the host
     // local IPC endpoints while libkrun retains framing, queues and credits.
@@ -2605,11 +2625,15 @@ fn build_vm(
             network_secrets_handle = Some(network.secrets_handle());
         }
 
-        if vm.checkpoint_restore.is_some() {
-            network_activation_handle = Some(network.defer_activation());
-        }
-
-        network.start(tokio_handle.clone());
+        let activation = if vm.checkpoint_restore.is_some() {
+            Some(network.defer_activation())
+        } else {
+            None
+        };
+        network_startup = Some(NetworkStartup {
+            activation,
+            publication: network.start(tokio_handle.clone()),
+        });
 
         let guest_mac = network.guest_mac();
         let net_backend = network.take_backend();
@@ -2748,7 +2772,7 @@ fn build_vm(
         network_termination_handle,
         network_metrics_handle,
         network_secrets_handle,
-        network_activation_handle,
+        network_startup,
         bootstrap_frame,
         bootstrap,
         bind_identity_map,
