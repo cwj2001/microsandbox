@@ -1,0 +1,31 @@
+crates/network/lib/engine/network/published_ports_tests.rs
+  s_c9cee1a641155f::t_adcf4ce90e4cca 127,129,131-191,273-274
+  s_c9cee1a641155f::t_5943143d121347 4,64-126
+  s_c9cee1a641155f::t_534a426e4b252b 128
+  s_c9cee1a641155f::t_21874f47f31344 130
+  s_c9cee1a641155f::t_2bbee9f15ab595 275-277
+crates/runtime/lib/runner/vm.rs
+  s_c9cee1a641155f::t_8f1c92767a06e9 447-450,453,460,1067,1217,1317-1341,2499,2501,2628-2636,2775
+crates/network/lib/engine/ports/publisher.rs
+  s_c9cee1a641155f::t_b282f21ae93de7 104-120,217,226,242,244-250,252,267-268,596-599,601,603-607,609,615-633,635-663,671,676-679,685,687,693-694,696,700,737-748,802,840,1271,1435-1436,1749-1750,2150,2199
+crates/network/lib/engine/netstack/poll.rs
+  s_c9cee1a641155f::t_e88de5950ca25b 254,293-324,2094,2244
+crates/network/lib/engine/network.rs
+  s_c9cee1a641155f::t_2d07461aba9707 389-396,444,449
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1e0a5c517db4ffeef1c658adcffdc91eb08a0c5",
+  "prompts": {},
+  "sessions": {
+    "s_c9cee1a641155f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a14af3-4153-7665-a6a0-ccef063a56c1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    }
+  }
+}
