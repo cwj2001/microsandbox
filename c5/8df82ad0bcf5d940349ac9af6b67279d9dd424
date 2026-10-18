@@ -1,0 +1,24 @@
+crates/network/lib/engine/network/published_ports_tests.rs
+  s_c9cee1a641155f::t_fed730777bc9c4 315-323
+  s_c9cee1a641155f::t_05c764180f238e 3-4,18-19,22-23,175,189-194,229-286,288-292,294-298,300-314,324-330
+  s_c9cee1a641155f::t_2d31eeea1cd157 287
+  s_c9cee1a641155f::t_125d47d2f91a1b 293
+  s_c9cee1a641155f::t_c21a752de555c6 299
+  s_c9cee1a641155f::t_8431fa069812de 331-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c58df82ad0bcf5d940349ac9af6b67279d9dd424",
+  "prompts": {},
+  "sessions": {
+    "s_c9cee1a641155f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a14af3-4153-7665-a6a0-ccef063a56c1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    }
+  }
+}
