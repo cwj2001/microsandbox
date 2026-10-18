@@ -12,7 +12,7 @@
 
 <br />
 
-<div align="center"><b>——&nbsp;&nbsp;&nbsp;easy, fast, local microVMs for untrusted workloads&nbsp;&nbsp;&nbsp;——</b></div>
+<div align="center"><b>——&nbsp;&nbsp;&nbsp;easy, fast, programmable microVMs for untrusted workloads&nbsp;&nbsp;&nbsp;——</b></div>
 
 <br />
 <br />
@@ -21,6 +21,10 @@
   <a href="https://github.com/superradcompany/microsandbox/releases"><img src="https://img.shields.io/github/v/release/superradcompany/microsandbox?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
   <a href="https://discord.gg/T95Y3XnEAK"><img src="https://img.shields.io/discord/1315784565562019870?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache 2.0-blue.svg?style=for-the-badge" alt="Apache 2.0 License"></a>
+</div>
+
+<div align='center'>
+    <a href="https://trendshift.io/repositories/24502?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-24502" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/24502" alt="superradcompany%2Fmicrosandbox | Trendshift" width="250" height="55"/></a>
 </div>
 
 <br />

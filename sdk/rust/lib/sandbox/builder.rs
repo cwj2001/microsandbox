@@ -3505,6 +3505,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_builder_rejects_env_the_guest_cannot_boot_with() {
+        for (key, value, expected) in [
+            ("", "1", "key must not be empty"),
+            ("A=B", "1", "must not contain '='"),
+            ("A\0B", "1", "must not contain NUL"),
+            ("A", "x\0y", "value for \"A\" must not contain NUL"),
+        ] {
+            let err = SandboxBuilder::new("test")
+                .image("alpine")
+                .env(key, value)
+                .build()
+                .await
+                .unwrap_err();
+
+            assert!(err.to_string().contains(expected), "{key:?}: {err}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_builder_rejects_zero_memory() {
         let err = SandboxBuilder::new("test")
             .image("alpine")

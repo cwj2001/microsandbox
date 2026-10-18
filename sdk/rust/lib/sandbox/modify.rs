@@ -1,6 +1,9 @@
 //! Sandbox modification planning.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use microsandbox_types::{
     EnvVar, RootDisk, RootfsSource, SecretSubstitution, SecretViolationAction,
@@ -2330,6 +2333,15 @@ fn push_spec_conflicts(
     conflicts: &mut Vec<ModificationConflict>,
 ) {
     for var in &patch.env {
+        // Apply create's env rules to the entries being set; removals stay allowed.
+        if let Err(crate::MicrosandboxError::InvalidConfig(message)) =
+            super::validate_env(std::slice::from_ref(var))
+        {
+            conflicts.push(ModificationConflict {
+                field: ENV_FIELD.to_string(),
+                message,
+            });
+        }
         if patch.env_remove.contains(&var.key) {
             conflicts.push(ModificationConflict {
                 field: ENV_FIELD.to_string(),
@@ -2341,6 +2353,16 @@ fn push_spec_conflicts(
         }
     }
     for (key, _) in &patch.labels {
+        // Same key rules as create. Removal is not checked, so a sandbox that
+        // already holds such a key can be repaired.
+        if let Err(crate::MicrosandboxError::InvalidConfig(message)) =
+            super::validate_labels(&BTreeMap::from([(key.clone(), String::new())]))
+        {
+            conflicts.push(ModificationConflict {
+                field: LABEL_FIELD.to_string(),
+                message,
+            });
+        }
         if patch.labels_remove.contains(key) {
             conflicts.push(ModificationConflict {
                 field: LABEL_FIELD.to_string(),
@@ -3534,6 +3556,80 @@ mod tests {
         assert!(stored.spec.labels.is_empty());
     }
 
+    #[tokio::test]
+    async fn modify_rejects_invalid_env_and_saves_nothing() {
+        let temp = tempdir().unwrap();
+        let backend: Arc<dyn Backend> = Arc::new(
+            LocalBackend::builder()
+                .config_path(temp.path().join("config.json"))
+                .managed_config_path(temp.path().join("managed.json"))
+                .home(temp.path())
+                .build()
+                .await
+                .unwrap(),
+        );
+        let pools = backend.as_local().unwrap().db().await.unwrap();
+        let mut current = config(2, 1024);
+        current.spec.env = vec![EnvVar::new("MODE", "dev"), EnvVar::new("MSB_LEGACY", "1")];
+        let stored_before = serde_json::to_string(&current).unwrap();
+        let model = sandbox_entity::ActiveModel {
+            name: Set(current.spec.name.clone()),
+            config: Set(stored_before.clone()),
+            active_config: Set(None),
+            status: Set(SandboxStatus::Stopped),
+            ephemeral: Set(false),
+            ..Default::default()
+        }
+        .insert(pools.write())
+        .await
+        .unwrap();
+        let stored_config = || async {
+            sandbox_entity::Entity::find_by_id(model.id)
+                .one(pools.read())
+                .await
+                .unwrap()
+                .unwrap()
+                .config
+        };
+
+        let plan = SandboxModificationBuilder::new(backend.clone(), "api")
+            .env("MSB_X", "1")
+            .env("OK", "1")
+            .dry_run()
+            .await
+            .unwrap();
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.conflicts[0].field, ENV_FIELD);
+        assert!(plan.conflicts[0].message.contains("reserved MSB_ prefix"));
+
+        let error = SandboxModificationBuilder::new(backend.clone(), "api")
+            .env("MSB_X", "1")
+            .env("OK", "1")
+            .apply()
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("reserved MSB_ prefix"));
+        assert_eq!(stored_config().await, stored_before);
+
+        let plan = SandboxModificationBuilder::new(backend.clone(), "api")
+            .env("A=B", "1")
+            .dry_run()
+            .await
+            .unwrap();
+        assert_eq!(plan.conflicts.len(), 1);
+        assert!(plan.conflicts[0].message.contains("must not contain '='"));
+
+        // Removing a reserved key that older state already holds stays allowed.
+        let plan = SandboxModificationBuilder::new(backend.clone(), "api")
+            .remove_env("MSB_LEGACY")
+            .apply()
+            .await
+            .unwrap();
+        assert!(plan.applied);
+        let saved: SandboxConfig = serde_json::from_str(&stored_config().await).unwrap();
+        assert_eq!(saved.spec.env, vec![EnvVar::new("MODE", "dev")]);
+    }
+
     #[test]
     fn running_resource_changes_require_restart_until_live_resize_lands() {
         let patch = SandboxModificationPatch {
@@ -4576,6 +4672,78 @@ mod tests {
         assert_eq!(plan.conflicts[1].field, "label");
         assert!(plan.conflicts[1].message.contains("team"));
         assert!(validate_apply_supported(&plan).is_err());
+    }
+
+    #[tokio::test]
+    async fn setting_an_invalid_label_key_is_refused_and_nothing_is_saved() {
+        let temp = tempdir().unwrap();
+        let backend: Arc<dyn Backend> = Arc::new(
+            LocalBackend::builder()
+                .config_path(temp.path().join("config.json"))
+                .managed_config_path(temp.path().join("managed.json"))
+                .home(temp.path())
+                .build()
+                .await
+                .unwrap(),
+        );
+        let pools = backend.as_local().unwrap().db().await.unwrap();
+        // `sandbox.legacy` stands in for a key saved before modify checked keys.
+        let mut current = config(2, 1024);
+        current.spec.labels.insert("team".into(), "infra".into());
+        current
+            .spec
+            .labels
+            .insert("sandbox.legacy".into(), "old".into());
+        let stored_json = serde_json::to_string(&current).unwrap();
+        let model = sandbox_entity::ActiveModel {
+            name: Set(current.spec.name.clone()),
+            config: Set(stored_json.clone()),
+            active_config: Set(None),
+            status: Set(SandboxStatus::Stopped),
+            ephemeral: Set(false),
+            ..Default::default()
+        }
+        .insert(pools.write())
+        .await
+        .unwrap();
+        let stored_config = || async {
+            sandbox_entity::Entity::find_by_id(model.id)
+                .one(pools.read())
+                .await
+                .unwrap()
+                .unwrap()
+                .config
+        };
+
+        for key in ["", "sandbox.id"] {
+            let plan = SandboxModificationBuilder::new(backend.clone(), "api")
+                .label(key, "x")
+                .dry_run()
+                .await
+                .unwrap();
+            assert_eq!(plan.conflicts.len(), 1, "key {key:?}");
+            assert_eq!(plan.conflicts[0].field, LABEL_FIELD);
+
+            let error = SandboxModificationBuilder::new(backend.clone(), "api")
+                .label(key, "x")
+                .apply()
+                .await
+                .expect_err(&format!("key {key:?} was applied"));
+            assert!(error.to_string().contains("label key"), "{error}");
+            assert_eq!(stored_config().await, stored_json);
+        }
+
+        let plan = SandboxModificationBuilder::new(backend.clone(), "api")
+            .remove_label("sandbox.legacy")
+            .apply()
+            .await
+            .unwrap();
+        assert!(plan.applied);
+        let saved: SandboxConfig = serde_json::from_str(&stored_config().await).unwrap();
+        assert_eq!(
+            saved.spec.labels.into_iter().collect::<Vec<_>>(),
+            vec![("team".to_string(), "infra".to_string())]
+        );
     }
 
     #[test]
