@@ -1,0 +1,21 @@
+crates/network/lib/engine/network/published_ports_tests.rs
+  s_c9cee1a641155f::t_f37cc755ca8733 211,213
+  s_c9cee1a641155f::t_8ecb21d57075d7 205
+  s_c9cee1a641155f::t_ffdaf8e487a741 175-178,182-193,204,206,210,212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "250e908c34176da8b810f1ec12bc457f7b03c157",
+  "prompts": {},
+  "sessions": {
+    "s_c9cee1a641155f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a14af3-4153-7665-a6a0-ccef063a56c1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    }
+  }
+}
