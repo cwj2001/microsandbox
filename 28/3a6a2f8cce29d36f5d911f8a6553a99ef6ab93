@@ -1,0 +1,46 @@
+crates/network/tests/published_ports_activation.rs
+  s_c9cee1a641155f::t_281867e9a7ac82 1-116
+  s_c9cee1a641155f::t_29854c39c1add2 117-119
+crates/network/lib/engine/ports/publisher.rs
+  s_75aa75d8b95c1a::t_fb7950ea4cb68e 105-106,114,260,264-318,331,670,695,722,728-730,885-891,951,1368,2237,2286
+crates/network/lib/engine/network/published_ports_tests.rs
+  s_bb6f13e95dd556::t_e240dba48c4868 3,66,71,74-84,88-92,119,122,127,134,291-294,346,378,400,408-414,418-516
+  s_bb6f13e95dd556::t_f0d34ffe1ad2de 232-233,284-286,288-289,415-417
+  s_bb6f13e95dd556::t_56e636d9e6944a 517-518
+docs/networking/overview.mdx
+  s_c9cee1a641155f::t_7dd7bbbba81aba 457
+crates/runtime/lib/runner/vm.rs
+  s_c9cee1a641155f::t_a83bfa985c0c85 1398-1412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "283a6a2f8cce29d36f5d911f8a6553a99ef6ab93",
+  "prompts": {},
+  "sessions": {
+    "s_75aa75d8b95c1a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1694d-e413-7780-8144-98860b5fa11a",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    },
+    "s_bb6f13e95dd556": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a16943-531b-7255-83d8-00f0ed065cb1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    },
+    "s_c9cee1a641155f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a14af3-4153-7665-a6a0-ccef063a56c1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    }
+  }
+}

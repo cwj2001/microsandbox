@@ -1,0 +1,40 @@
+crates/network/tests/published_ports_startup.rs
+  s_c9cee1a641155f::t_223933350b5b27 35-36
+  s_c9cee1a641155f::t_7656a713006d67 1-34,37-82
+crates/network/lib/engine/network/published_ports_tests.rs
+  s_5a6c20e9111a18::t_8c6a8c164086f5 3,10,65-75,78-81,93,99,105-107,110,114-115,118-122,203-209,211-220,249-251,253-257,270-303,326-336,352-355,361-369,375-378
+  s_c9cee1a641155f::t_a19d9b30bdb6c3 223-237,239-244
+  s_5a6c20e9111a18::t_70cd654365bcb3 258-269
+  s_5a6c20e9111a18::t_e1e62bc5263042 85
+  s_c9cee1a641155f::t_38b5cb61a640d8 245-247,252
+crates/network/lib/engine/network.rs
+  s_c9cee1a641155f::t_33b778ac0d4573 356,405,417-419,602
+crates/network/lib/engine/ports/publisher.rs
+  s_c9cee1a641155f::t_f4b4f8d0257aa8 106-107,261,265-269,289,669,682-691,736,819-836,877,879-888,932,936-941,1359,2229,2279
+docs/networking/overview.mdx
+  s_c9cee1a641155f::t_392b61cb5c5c49 457-458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ce3e1f16bfacbed09f07cff82b0e0ed725d8876",
+  "prompts": {},
+  "sessions": {
+    "s_5a6c20e9111a18": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a16694-82a8-71d4-a5e7-606f69c80aa0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    },
+    "s_c9cee1a641155f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a14af3-4153-7665-a6a0-ccef063a56c1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": null
+    }
+  }
+}
