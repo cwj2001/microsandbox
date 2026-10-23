@@ -1,0 +1,48 @@
+crates/runtime/lib/runner/vm.rs
+  s_c9cee1a641155f::t_c3e5492b7231ae 2611-2613
+crates/network/lib/engine/netstack/poll.rs
+  s_c9cee1a641155f::t_be68366a139436 25-27,231,245,290,2050-2060,2063,2068,2208-2217
+  s_c9cee1a641155f::t_6e59e9ec0df6c5 2218
+  s_c9cee1a641155f::t_84fdd2041803e5 2221,2226
+crates/network/lib/engine/ports/publisher.rs
+  s_c9cee1a641155f::t_3bfc4ed71c85b8 271
+  s_c9cee1a641155f::t_90654b483ea997 651-653,662-667,672-674,684-685
+  s_c9cee1a641155f::t_e3005207cb22d3 206-207,621-627
+  s_c9cee1a641155f::t_5d7803d7c75918 268-270
+  s_c9cee1a641155f::t_03fa6f90f9a636 272-274
+  s_c9cee1a641155f::t_3717c68d49b7bd 618-620
+  s_c9cee1a641155f::t_824b86e44bd19b 628-630,648-650
+  s_c9cee1a641155f::t_f4c3b7f0915edf 686-688
+  s_c9cee1a641155f::t_bd2a170184b745 104-129,204,216,225-226,233,235-241,243,258-267,275-281,592,599-617,631-647,689-690,708,714,772-786,836,874,1305,1464-1465,1773-1774,2174,2223
+crates/network/lib/engine/network.rs
+  s_c9cee1a641155f::t_2b6d6456ec87f1 31,150,351,353-355,390-393,404-415,441,452
+sdk/rust/tests/network_ports.rs
+  s_c9cee1a641155f::t_121e9663b1d14d 34,82-149
+  s_c9cee1a641155f::t_a003f5767768e4 35-46,61,155,159
+  s_c9cee1a641155f::t_4268d4b79fdb9f 47-49,58-60
+  s_c9cee1a641155f::t_a912520a2dc06a 62-64,79-81
+  s_c9cee1a641155f::t_a9fd7c88058d41 150-154
+  s_c9cee1a641155f::t_bae59783e9031c 156-158
+  s_c9cee1a641155f::t_e3d141970977aa 160
+  s_c9cee1a641155f::t_4db06c3aea868e 9,50-57,65-78
+crates/network/lib/engine/network/published_ports_tests.rs
+  s_c9cee1a641155f::t_eb5657a83cce1c 9-11,65-212,294
+docs/networking/overview.mdx
+  s_c9cee1a641155f::t_e168efd146381f 455-458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "522936b5329018ed9a770d36bc5d3170a7bfa618",
+  "prompts": {},
+  "sessions": {
+    "s_c9cee1a641155f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a14af3-4153-7665-a6a0-ccef063a56c1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "cwj2001 <2965241316@qq.com>"
+    }
+  }
+}
